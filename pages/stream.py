@@ -47,11 +47,9 @@ import matplotlib.font_manager as fm
 warnings.filterwarnings('ignore', category=UserWarning, module='matplotlib.font_manager')
 
 # 우분투에서 사용 가능한 폰트 경로 찾기
-font_path = "/usr/share/fonts/truetype/nanum/NanumGothic.ttf"
-fontprop = fm.FontProperties(fname=font_path)
+font_path = os.path.join(os.path.dirname(__file__), "../fonts/NanumGothic.ttf")  # pages 폴더 내부일 경우
 fm.fontManager.addfont(font_path)
-# 폰트 설정
-plt.rcParams['font.family'] = fontprop.get_name()
+plt.rc('font', family='NanumGothic')
 # 단위설정
 def format_korean_number_for_dashboard(col, value, decimals=1, show_unit=True):
     try:
