@@ -222,7 +222,7 @@ st.markdown(f"""
     margin-bottom: 1.8rem;
 }}
 
-.metric-card2 {{
+.metric-card2, .metric-card3 {{
     background: #fff;
     border-radius: 18px;
     box-shadow: 0 2px 10px rgba(80,90,150,0.07);
@@ -235,19 +235,11 @@ st.markdown(f"""
     align-items: center;
     flex: 1 1 160px;
 }}
+
 .metric-card3 {{
     background: #e9f0fc;
-    border-radius: 18px;
-    box-shadow: 0 2px 10px rgba(80,90,150,0.07);
-    border: 1.3px solid #f0f1f5;
-    min-width: 160px;
-    max-width: 200px;
-    padding: 1.1rem 1.1rem 0.7rem 1.1rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1 1 160px;
 }}
+
 .metric-label2 {{
     font-size: 1.08rem;
     color: #73787e;
@@ -256,6 +248,7 @@ st.markdown(f"""
     letter-spacing: 0.01em;
     position: relative;
     display: inline-block;
+    text-align: center;
 }}
 
 .tooltip-icon {{
@@ -277,9 +270,9 @@ st.markdown(f"""
     padding: 8px;
     position: absolute;
     z-index: 1;
-    bottom:120%;
-    left: 100%;
-    transform:translateX(-50%)
+    bottom: 120%;
+    left: 50%;
+    transform: translateX(-50%);
     opacity: 0;
     transition: opacity 0.3s;
     font-size: 0.7rem;
@@ -298,7 +291,7 @@ st.markdown(f"""
     margin-bottom: .18rem;
     letter-spacing: -0.5px;
     word-break: keep-all;
-    white-space:nowrap;
+    white-space: nowrap;
 }}
 
 .industry-card .metric-value2 {{
@@ -306,9 +299,31 @@ st.markdown(f"""
     white-space: nowrap;
     line-height: 1.7;
 }}
+
+/* 📱 모바일 대응 */
 @media (max-width: 900px) {{
-    .metrics-row {{ flex-direction: column; align-items: stretch; }}
-    .metric-card2 {{ max-width: 100%; min-width: unset; }}
+    .metrics-row {{
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }}
+    .metric-card2, .metric-card3 {{
+        max-width: 100%;
+        min-width: unset;
+        padding: 1rem;
+    }}
+    .metric-label2 {{
+        font-size: 1rem;
+    }}
+    .metric-value2 {{
+        font-size: 1.1rem;
+    }}
+    .tooltip-icon .tooltiptext {{
+        width: 200px;
+        font-size: 0.65rem;
+        left: 50%;
+        transform: translateX(-50%);
+    }}
 }}
 </style>
 
@@ -340,8 +355,8 @@ st.markdown(f"""
     <div class="metric-value2">{invest_type}</div>
   </div>
 </div>
-
 """, unsafe_allow_html=True)
+
 
 # 기업명과 분석 코멘트 가져오기
 analysis = data.get("analysis", {})
