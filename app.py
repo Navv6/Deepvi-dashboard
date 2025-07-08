@@ -78,28 +78,49 @@ st.markdown("""
         gap: 0.6rem;
         font-size: 2.3rem;
         font-weight: 800;
-        color: #1f2937;  /* Gray-800 */
+        color: #1f2937;
     }
 
     .deepview-subtitle {
-        color: #3B82F6;  /* Blue-500 */
+        color: #3B82F6;
         font-weight: 600;
         font-size: 1.05rem;
         margin-top: 0.5rem;
     }
 
     .deepview-desc {
-        color: #6B7280;  /* Gray-500 */
+        color: #6B7280;
         font-size: 0.95rem;
         margin-top: 0.6rem;
         line-height: 1.5;
     }
 
+    /* 📱 모바일 대응 */
+    @media screen and (max-width: 600px) {
+        .deepview-card {
+            padding: 1.5rem 1.2rem;
+            margin: 1.5rem 1rem;
+        }
+
+        .deepview-title {
+            font-size: 1.6rem;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .deepview-subtitle {
+            font-size: 0.95rem;
+        }
+
+        .deepview-desc {
+            font-size: 0.88rem;
+        }
+    }
 </style>
 
 <div class="deepview-card">
     <div class="deepview-title">
-        📊 <span>DeepVi: 기업을 깊이 읽다</span>
+        <span>DeepVi: 기업을 깊이 읽다</span>
     </div>
     <div class="deepview-subtitle">
         AI가 읽어주는 기업 이야기, <b>DeepVi</b>에서 시작됩니다.
@@ -109,6 +130,7 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
+
 
 # 줄 바꿈
 st.markdown("<br>", unsafe_allow_html=True)
