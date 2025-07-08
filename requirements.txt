@@ -21,7 +21,7 @@ langchain-pinecone
 langchain-huggingface
 
 # --- 금융 관련 ---
-FinanceDataReader
+finance-datareader==0.9.96
 koreanize-matplotlib
 reportlab
 
