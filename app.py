@@ -15,7 +15,6 @@ import plotly.graph_objects as go
 from urllib.parse import urlencode
 import html
 from streamlit.components.v1 import html as components_html
-from streamlit_js_eval import streamlit_js_eval, get_page_location
 import requests
 from streamlit_searchbox import st_searchbox
 from io import BytesIO
