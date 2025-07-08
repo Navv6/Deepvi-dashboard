@@ -514,6 +514,20 @@ with tab1:
     @media (max-width: 480px) {
         .cards-container { grid-template-columns: 1fr; }
     }
+    /* 📱 모바일 폰트 및 쉐도우 축소 */
+    @media (max-width: 768px) {
+        .metric-card {
+            padding: 12px;
+            box-shadow: none;
+            min-height: 140px;
+        }
+        .metric-card div {
+            font-size: 13px !important;
+        }
+        .tooltip-metric, .tooltip-status {
+            display: none;
+        }
+    }    
     .explanation-card {
         background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
         border: 1px solid #dee2e6;
@@ -710,7 +724,16 @@ with tab1:
                 "이자보상배율해석": "🟢 매우 우수(≥10배) > 🔵 우수(≥3배) > 🟡 경계(≥1배) > 🔴 위험(<1배)",
                 "자기자본비율해석": "🟢 탄탄(≥60%) > 🔵 양호(≥50%) > 🟡 보통(≥40%) > 🔴 취약(<40%)",
             }
-
+            # ✅ 여기에 붙이세요 (카드 반복문 위나 아래)
+            st.markdown("""
+            <style>
+            @media (max-width: 768px) {
+                .metric-card {
+                    margin-bottom: 16px !important;
+                }
+            }
+            </style>
+            """, unsafe_allow_html=True)
             cols = st.columns(5)
             for i, card in enumerate(cards_data):
                 with cols[i]:
@@ -763,11 +786,11 @@ with tab1:
 
                     # 🔸 카드 구성
                     card_style = (
-                        f'<div style="background:linear-gradient(135deg,#ffffff 0%,#f8f9fa 100%);'
+                        f'<div class="metric-card" style="background:linear-gradient(135deg,#ffffff 0%,#f8f9fa 100%);'
                         f'border:1px solid #e3e7ed;border-radius:12px;padding:12px;margin:-1px 0;'
                         f'box-shadow:0 2px 6px rgba(0,0,0,0.06);min-height:140px;display:flex;flex-direction:column;'
                         f'justify-content:space-between;position:relative;overflow:visible;line-height:1.2;">'
-
+                        
                         f'<div style="content:\'\';position:absolute;top:0;left:0;right:0;height:4px;'
                         f'background:linear-gradient(90deg,#2A72E8,#4A90E2);"></div>'
 
@@ -784,9 +807,9 @@ with tab1:
                         f'{card_bottom}'
                         f'</div>'
                     )
-
+                        
                     st.markdown(card_style, unsafe_allow_html=True)
-
+            
             # --- 툴팁용 CSS (분리된 스타일) ---
             st.markdown("""
             <style>
