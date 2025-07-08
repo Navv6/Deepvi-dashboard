@@ -109,7 +109,7 @@ st.markdown("""
         }
 
         .deepview-subtitle {
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .deepview-desc {

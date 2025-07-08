@@ -217,8 +217,8 @@ st.markdown(f"""
 .metrics-row {{
     display: flex;
     flex-wrap: wrap;
-    gap: 1.3rem;
-    justify-content: flex-start;
+    gap: 1rem 1.3rem;
+    justify-content: center;
     margin-bottom: 1.8rem;
 }}
 
@@ -227,13 +227,14 @@ st.markdown(f"""
     border-radius: 18px;
     box-shadow: 0 2px 10px rgba(80,90,150,0.07);
     border: 1.3px solid #f0f1f5;
-    min-width: 160px;
-    max-width: 200px;
     padding: 1.1rem 1.1rem 0.7rem 1.1rem;
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1 1 160px;
+    flex: 1 1 calc(50% - 1.3rem);  /* 두 칸으로 유지 */
+    min-width: 140px;
+    max-width: 220px;
+    box-sizing: border-box;
 }}
 
 .metric-card3 {{
@@ -241,7 +242,7 @@ st.markdown(f"""
 }}
 
 .metric-label2 {{
-    font-size: 1.08rem;
+    font-size: 1.05rem;
     color: #73787e;
     font-weight: 500;
     margin-bottom: .17rem;
@@ -285,7 +286,7 @@ st.markdown(f"""
 }}
 
 .metric-value2 {{
-    font-size: 1.20rem;
+    font-size: 1.15rem;
     font-weight: 700;
     color: #31353b;
     margin-bottom: .18rem;
@@ -294,35 +295,10 @@ st.markdown(f"""
     white-space: nowrap;
 }}
 
-.industry-card .metric-value2 {{
-    font-size: 1.1rem;
-    white-space: nowrap;
-    line-height: 1.7;
-}}
-
-/* 📱 모바일 대응 */
-@media (max-width: 900px) {{
-    .metrics-row {{
-        flex-direction: column;
-        align-items: stretch;
-        gap: 1rem;
-    }}
+@media (max-width: 600px) {{
     .metric-card2, .metric-card3 {{
+        flex: 1 1 calc(50% - 1.3rem);
         max-width: 100%;
-        min-width: unset;
-        padding: 1rem;
-    }}
-    .metric-label2 {{
-        font-size: 1rem;
-    }}
-    .metric-value2 {{
-        font-size: 1.1rem;
-    }}
-    .tooltip-icon .tooltiptext {{
-        width: 200px;
-        font-size: 0.65rem;
-        left: 50%;
-        transform: translateX(-50%);
     }}
 }}
 </style>
