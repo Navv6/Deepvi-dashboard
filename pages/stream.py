@@ -2217,71 +2217,71 @@ with st.container():
     # 🔁 최근 메시지만 출력 (일관성 유지)
     messages_to_show = st.session_state.get("message", [])[-3:]  # 최근 3개만
     
-# 💬 사용자 입력 (최상단에 위치)
-question = st.chat_input("기업 및 시장 관련 질문을 입력해보세요.")
+    # 💬 사용자 입력 (최상단에 위치)
+    question = st.chat_input("기업 및 시장 관련 질문을 입력해보세요.")
 
-# 채팅 영역 스타일 개선
-st.markdown("""
-<style>
-    .stChatMessage {
-        margin-bottom: 1rem;
-    }
-    .main .block-container {
-        padding-bottom: 2rem;
-    }
-</style>
-""", unsafe_allow_html=True)
+    # 채팅 영역 스타일 개선
+    st.markdown("""
+    <style>
+        .stChatMessage {
+            margin-bottom: 1rem;
+        }
+        .main .block-container {
+            padding-bottom: 2rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 메시지 표시
-if 'message' not in st.session_state:
-    st.session_state.message = []
+    # 메시지 표시
+    if 'message' not in st.session_state:
+        st.session_state.message = []
 
-# 보여줄 메시지 수 제한 (메모리 절약)
-messages_to_show = st.session_state.message[-20:] if len(st.session_state.message) > 20 else st.session_state.message
+    # 보여줄 메시지 수 제한 (메모리 절약)
+    messages_to_show = st.session_state.message[-20:] if len(st.session_state.message) > 20 else st.session_state.message
 
-for msg in messages_to_show:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["text"])
+    for msg in messages_to_show:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["text"])
 
-# 사용자 입력 처리
-if question:
-    # 사용자 메시지 추가 및 표시
-    st.session_state.message.append({"role": "user", "text": question})
-    with st.chat_message("user"):
-        st.markdown(question)
+    # 사용자 입력 처리
+    if question:
+        # 사용자 메시지 추가 및 표시
+        st.session_state.message.append({"role": "user", "text": question})
+        with st.chat_message("user"):
+            st.markdown(question)
 
-    # AI 응답 생성
-    with st.chat_message("assistant"):
-        placeholder = st.empty()
-        placeholder.info("AI가 답변 생성 중입니다...")
-        
-        category, qa_chain = get_retrieval_chain_by_question(question)
+        # AI 응답 생성
+        with st.chat_message("assistant"):
+            placeholder = st.empty()
+            placeholder.info("AI가 답변 생성 중입니다...")
+            
+            category, qa_chain = get_retrieval_chain_by_question(question)
 
-        if category == "news":
-            stream_gen = ask_from_news_summary(
-                question, data.get("news", [])
-            )
-        elif category == "meta":
-            stream_gen = generate_financial_based_answer_stream(
-                question, data.get("financial_raw", [])
-            )
-        else:
-            stream_gen = answer_with_context_and_rag_stream(
-                question, data, qa_chain, data.get("news", [])
-            )
+            if category == "news":
+                stream_gen = ask_from_news_summary(
+                    question, data.get("news", [])
+                )
+            elif category == "meta":
+                stream_gen = generate_financial_based_answer_stream(
+                    question, data.get("financial_raw", [])
+                )
+            else:
+                stream_gen = answer_with_context_and_rag_stream(
+                    question, data, qa_chain, data.get("news", [])
+                )
 
-        # 스트리밍 출력
-        last_answer = ""
-        for partial in stream_gen:
-            placeholder.markdown(partial + "▌")
-            last_answer = partial
-        placeholder.markdown(last_answer)
-        answer = last_answer
+            # 스트리밍 출력
+            last_answer = ""
+            for partial in stream_gen:
+                placeholder.markdown(partial + "▌")
+                last_answer = partial
+            placeholder.markdown(last_answer)
+            answer = last_answer
 
-    st.session_state.message.append({"role": "assistant", "text": answer})
+        st.session_state.message.append({"role": "assistant", "text": answer})
 
-# ✅ 세션 메시지 정리 (최근 3개만 유지)
-MAX_MESSAGES = 3
-if len(st.session_state.message) > MAX_MESSAGES:
-    st.session_state.message = st.session_state.message[-MAX_MESSAGES:]
+    # ✅ 세션 메시지 정리 (최근 3개만 유지)
+    MAX_MESSAGES = 3
+    if len(st.session_state.message) > MAX_MESSAGES:
+        st.session_state.message = st.session_state.message[-MAX_MESSAGES:]
 
