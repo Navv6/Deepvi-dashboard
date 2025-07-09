@@ -165,26 +165,6 @@ def get_all_market_data():
     
     return dict((code, (today, yesterday)) for code, today, yesterday in results)
 
-# 뉴스 데이터 캐시
-@st.cache_data(ttl=300, show_spinner=False)  # 5분 캐시
-def get_naver_news_cached(query):
-    naver_id = st.secrets["naver"]["client_id"]
-    naver_secret = st.secrets["naver"]["client_secret"]
-    
-    try:
-        encText = urllib.parse.quote(query)
-        url = f"https://openapi.naver.com/v1/search/news.json?query={encText}&display=10"
-        request = urllib.request.Request(url)
-        request.add_header("X-Naver-Client-Id", st.secrets["naver"]["client_id"])
-        request.add_header("X-Naver-Client-Secret", st.secrets["naver"]["client_secret"])
-        
-        with urllib.request.urlopen(request, timeout=5) as response:  # 타임아웃 설정
-            if response.getcode() == 200:
-                return json.loads(response.read().decode('utf-8'))
-    except Exception as e:
-        st.error(f"뉴스 로딩 중 오류: {str(e)}")
-    return None
-
 # 세션 상태 초기화
 if 'market_data_loaded' not in st.session_state:
     st.session_state.market_data_loaded = False

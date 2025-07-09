@@ -97,6 +97,18 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+
+def scroll_to_top():
+    # JS로 강제 스크롤 이동
+    html("""
+    <script>
+        window.scrollTo({top: 0, left: 0, behavior: 'instant'});
+    </script>
+    """, height=0)
+
+# 분석 페이지 진입(로딩) 직후 실행
+scroll_to_top()
+
 # FastAPI 서버 URL
 FASTAPI_URL = "http://218.50.44.25:8000"
 
