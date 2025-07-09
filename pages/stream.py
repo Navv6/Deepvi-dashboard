@@ -1582,213 +1582,57 @@ except Exception as e:
     logger.error(f"❌ Pinecone 초기화 실패: {e}")
     st.error("Pinecone 초기화에 실패했습니다.")
 
-# ---------------------- 임베딩 모델 초기화 ----------------------
-@st.cache_resource
-def load_embedding_model():
-    """임베딩 모델 로드 (개선된 버전)"""
-    try:
-        logger.info("🔄 임베딩 모델 로드 중...")
-        
-        # GPU 캐시 정리
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-        
-        # 모델 로드 옵션들 (우선순위 순)
-        model_options = [
-            {
-                "model_name": "intfloat/multilingual-e5-large",
-                "model_kwargs": {
-                    "device": DEVICE,
-                    "trust_remote_code": True,
-                    "torch_dtype": torch.float16 if DEVICE == "cuda" else torch.float32,
-                },
-                "encode_kwargs": {"normalize_embeddings": True, "batch_size": 32}
-            },
-            {
-                "model_name": "intfloat/multilingual-e5-base",  # 더 작은 모델
-                "model_kwargs": {
-                    "device": DEVICE,
-                    "trust_remote_code": True,
-                    "torch_dtype": torch.float16 if DEVICE == "cuda" else torch.float32,
-                },
-                "encode_kwargs": {"normalize_embeddings": True, "batch_size": 64}
-            },
-            {
-                "model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                "model_kwargs": {
-                    "device": DEVICE,
-                    "trust_remote_code": True,
-                },
-                "encode_kwargs": {"normalize_embeddings": True, "batch_size": 128}
-            }
-        ]
-        
-        # 각 모델 옵션을 순차적으로 시도
-        for i, options in enumerate(model_options):
-            try:
-                logger.info(f"📥 모델 로드 시도 {i+1}/3: {options['model_name']}")
-                
-                embedding_model = HuggingFaceEmbeddings(**options)
-                
-                # 테스트 임베딩 생성
-                test_embedding = embedding_model.embed_query("테스트")
-                
-                if len(test_embedding) > 100:  # 임베딩 차원 확인
-                    logger.info(f"✅ 임베딩 모델 로드 성공: {options['model_name']}")
-                    logger.info(f"   임베딩 차원: {len(test_embedding)}")
-                    logger.info(f"   디바이스: {DEVICE}")
-                    return embedding_model
-                else:
-                    logger.warning(f"⚠️ 임베딩 차원이 너무 작음: {len(test_embedding)}")
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ 모델 로드 실패: {options['model_name']} - {str(e)}")
-                # GPU 메모리 정리
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                continue
-        
-        # 모든 모델 로드 실패
-        logger.error("❌ 모든 임베딩 모델 로드 실패")
-        
-        # 마지막 시도: CPU로 강제 설정
-        if DEVICE == "cuda":
-            logger.info("🔄 CPU로 모델 로드 재시도...")
-            try:
-                embedding_model = HuggingFaceEmbeddings(
-                    model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                    model_kwargs={"device": "cpu", "trust_remote_code": True},
-                    encode_kwargs={"normalize_embeddings": True}
-                )
-                
-                test_embedding = embedding_model.embed_query("테스트")
-                if len(test_embedding) > 100:
-                    logger.info("✅ CPU 모드로 임베딩 모델 로드 성공")
-                    return embedding_model
-                    
-            except Exception as e:
-                logger.error(f"❌ CPU 모드 로드도 실패: {e}")
-        
-        return None
-        
-    except Exception as e:
-        logger.error(f"❌ 임베딩 모델 로드 중 예상치 못한 오류: {e}")
-        return None
+# ------------------ 임베딩 모델 ------------------
+# E5 = 뉴스, 기업개요
+embedding_e5 = HuggingFaceEmbeddings(
+    model_name="intfloat/multilingual-e5-large",
+    model_kwargs={"device": "cuda" if torch.cuda.is_available() else "cpu"}
+)
 
-# ---------------------- 벡터스토어 초기화 안전화 ----------------------
-@st.cache_resource
-def initialize_vectorstores():
-    """벡터스토어 초기화 (안전화된 버전)"""
-    try:
-        # 임베딩 모델 재로드
-        embedding_e5 = load_embedding_model()
-        
-        if embedding_e5 is None:
-            logger.error("❌ 임베딩 모델이 로드되지 않았습니다.")
-            return None, None, None
-        
-        logger.info("🔄 벡터스토어 초기화 시작...")
-        
-        vectorstore_news = None
-        vectorstore_company = None
-        vectorstore_meta = None
-        
-        # 뉴스 벡터스토어
-        try:
-            vectorstore_news = PineconeVectorStore(
-                index=pc_team.Index(TEAM_INDEX_NAME),
-                embedding=embedding_e5,
-                text_key="summary",
-                namespace="news-ns"
-            )
-            logger.info("✅ 뉴스 벡터스토어 초기화 성공")
-        except Exception as e:
-            logger.error(f"❌ 뉴스 벡터스토어 초기화 실패: {e}")
-        
-        # 회사 벡터스토어
-        try:
-            vectorstore_company = PineconeVectorStore(
-                index=pc_my.Index(COMPANY_INDEX_NAME),
-                embedding=embedding_e5,
-                text_key="summary_comment"
-            )
-            logger.info("✅ 회사 벡터스토어 초기화 성공")
-        except Exception as e:
-            logger.error(f"❌ 회사 벡터스토어 초기화 실패: {e}")
-        
-        # 메타 벡터스토어
-        try:
-            vectorstore_meta = PineconeVectorStore(
-                index=pc_my.Index(META_INDEX_NAME),
-                embedding=embedding_e5,
-                text_key="description"
-            )
-            logger.info("✅ 메타 벡터스토어 초기화 성공")
-        except Exception as e:
-            logger.error(f"❌ 메타 벡터스토어 초기화 실패: {e}")
-        
-        # 성공한 벡터스토어 개수 확인
-        success_count = sum([
-            vectorstore_news is not None,
-            vectorstore_company is not None,
-            vectorstore_meta is not None
-        ])
-        
-        logger.info(f"✅ 벡터스토어 초기화 완료 ({success_count}/3 성공)")
-        return vectorstore_news, vectorstore_company, vectorstore_meta
-        
-    except Exception as e:
-        logger.error(f"❌ 벡터스토어 초기화 실패: {e}")
-        return None, None, None
+# ------------------ 벡터스토어 정의 ------------------
+vectorstore_news = PineconeVectorStore(
+    index=pc_team.Index(TEAM_INDEX_NAME),
+    embedding=embedding_e5,
+    text_key="summary",
+    namespace="news-ns"
+)
 
-# ---------------------- Retriever 안전한 초기화 ----------------------
-def initialize_retrievers():
-    """Retriever 안전한 초기화"""
-    try:
-        vectorstore_news, vectorstore_company, vectorstore_meta = initialize_vectorstores()
-        if not all([vectorstore_news, vectorstore_company, vectorstore_meta]):
-            logger.error("벡터스토어가 초기화되지 않았습니다.")
-            return None, None, None
-            
-        retriever_news = vectorstore_news.as_retriever(
-            search_kwargs={"k": 5, "score_threshold": 0.7}
-        )
-        retriever_company = vectorstore_company.as_retriever(
-            search_kwargs={"k": 5, "score_threshold": 0.7}
-        )
-        retriever_meta = vectorstore_meta.as_retriever(
-            search_kwargs={"k": 3, "score_threshold": 0.7}
-        )
-        
-        logger.info("✅ Retriever 설정 완료")
-        return retriever_news, retriever_company, retriever_meta
-        
-    except Exception as e:
-        logger.error(f"❌ Retriever 초기화 실패: {e}")
-        return None, None, None
+vectorstore_company = PineconeVectorStore(
+    index=pc_my.Index(COMPANY_INDEX_NAME),
+    embedding=embedding_e5,
+    text_key="summary_comment"
+)
 
-# Retriever 초기화 (전역 변수로 설정)
-retriever_news, retriever_company, retriever_meta = initialize_retrievers()
+vectorstore_meta = PineconeVectorStore(
+    index=pc_my.Index(META_INDEX_NAME),
+    embedding=embedding_e5,
+    text_key="description"
+)
+# ------------------ Retriever ------------------
+retriever_news = vectorstore_news.as_retriever(search_kwargs={"k": 5})
+retriever_company = vectorstore_company.as_retriever(search_kwargs={"k": 5})
+retriever_meta = vectorstore_meta.as_retriever(search_kwargs={"k": 3})
+# ------------------ GPT LLM + QA 체인 ------------------
+# 🔐 GPT LLM 세팅
+llm = ChatOpenAI(
+    model_name="gpt-4o",
+    temperature=0.3,
+    openai_api_key=OPENAI_API_KEY
+)
 
-# ---------------------- LLM 설정 ----------------------
-MODEL_NAME = "gpt-4o"
-TEMPERATURE = 0.3
-MAX_TOKENS = 2000
+# 🔍 뉴스용 QA 체인
+qa_chain_news = RetrievalQA.from_chain_type(
+    llm=llm,
+    retriever=retriever_news,
+    return_source_documents=True
+)
 
-try:
-    llm = ChatOpenAI(
-        model_name=MODEL_NAME,
-        temperature=TEMPERATURE,
-        openai_api_key=OPENAI_API_KEY,
-        max_tokens=MAX_TOKENS,
-        streaming=True  # 스트리밍 활성화
-    )
-    logger.info("✅ GPT LLM 초기화 완료")
-except Exception as e:
-    logger.error(f"❌ LLM 초기화 실패: {e}")
-    st.error("LLM 초기화에 실패했습니다.")
-    llm = None
+# 🔍 종합분석용 QA 체인
+qa_chain_meta = RetrievalQA.from_chain_type(
+    llm=llm,
+    retriever=retriever_meta,
+    return_source_documents=True
+)
 
 # ---------------------- OpenAI 클라이언트 초기화 ----------------------
 try:
@@ -1854,28 +1698,6 @@ def get_gpu_memory_info():
         reserved = torch.cuda.memory_reserved() / 1024**3
         return f"GPU 메모리: {allocated:.2f}GB / {reserved:.2f}GB"
     return "GPU 사용 불가"
-
-def get_system_status():
-    """시스템 상태 확인"""
-    # 임베딩 모델 및 벡터스토어는 함수 호출로 가져옴 (캐시 활용)
-    embedding_e5 = load_embedding_model()
-    vectorstore_news, vectorstore_company, vectorstore_meta = initialize_vectorstores()
-    status = {
-        "device": DEVICE,
-        "embedding_model": embedding_e5 is not None,
-        "vectorstore_news": vectorstore_news is not None,
-        "vectorstore_company": vectorstore_company is not None,
-        "vectorstore_meta": vectorstore_meta is not None,
-        "retriever_news": retriever_news is not None,
-        "retriever_company": retriever_company is not None,
-        "retriever_meta": retriever_meta is not None,
-        "llm": llm is not None,
-        "openai_client": openai_client is not None,
-        "qa_chain_news": qa_chain_news is not None,
-        "qa_chain_meta": qa_chain_meta is not None,
-    }
-    return status
-
 # ---------------------- 안전한 사용 함수들 ----------------------
 def safe_retrieve(retriever, query, fallback_text="정보를 찾을 수 없습니다."):
     """안전한 retriever 사용"""
@@ -1968,9 +1790,9 @@ def generate_gpt4o_response_from_history_stream(system_prompt: str = None):
         messages.append({"role": msg["role"], "content": msg["text"]})
 
     response = openai_client.chat.completions.create(
-        model=MODEL_NAME,
+        model='gpt-4o',
         messages=messages,
-        temperature=TEMPERATURE,
+        temperature=0.3,
         stream=True,
     )
 
