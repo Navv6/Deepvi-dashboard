@@ -231,7 +231,7 @@ st.markdown(f"""
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1 1 calc(50% - 1.3rem);  /* 두 칸으로 유지 */
+    flex: 1 1 calc(70%  rem);  /* 두 칸으로 유지 */
     min-width: 140px;
     max-width: 220px;
     box-sizing: border-box;
@@ -1490,111 +1490,486 @@ with news_tab3:
             )
     else:
         st.info("뉴스 리스트를 불러올 수 없습니다.")
-# ---------------------- 사용자 질문 ----------------------
+
+#LLM------------------------------------------
+import logging
 import openai
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# ROCm에서도 torch.cuda를 사용
-print("PyTorch 버전:", torch.__version__)
-print("HIP 지원 여부:", getattr(torch.version, 'hip', '❌ 없음'))
-print("GPU 사용 가능 여부:", torch.cuda.is_available())
-if torch.cuda.is_available():
-    print("사용 중인 디바이스:", torch.cuda.get_device_name(0))
-else:
-    print("현재 CPU만 사용 가능")
-# 🔐 API Key
-PINECONE_TEAM_API_KEY = st.secrets["team_pinecone"]["api_key"]
-PINECONE_MY_API_KEY = st.secrets["my_pinecone"]["api_key"]
-OPENAI_API_KEY = st.secrets["my_pinecone"]["openai_api_key"]
-GEMINI_API_KEY = st.secrets["team_pinecone"]["gemini_api_key"]
+# ---------------------- 디바이스 확인 및 설정 ----------------------
+def setup_device():
+    """디바이스 설정 및 정보 출력"""
+    print("=" * 50)
+    print("🔧 시스템 정보")
+    print("=" * 50)
+    print(f"PyTorch 버전: {torch.__version__}")
+    
+    # ROCm 환경 확인
+    hip_version = getattr(torch.version, 'hip', None)
+    if hip_version:
+        print(f"HIP 버전: {hip_version}")
+    else:
+        print("HIP 지원: ❌ 없음")
+    
+    # GPU 사용 가능 여부 확인
+    if torch.cuda.is_available():
+        print("GPU 사용 가능: ✅")
+        device_count = torch.cuda.device_count()
+        print(f"사용 가능한 GPU 수: {device_count}")
+        
+        for i in range(device_count):
+            device_name = torch.cuda.get_device_name(i)
+            print(f"디바이스 {i}: {device_name}")
+            
+            # GPU 메모리 정보 (ROCm에서도 동작)
+            try:
+                memory_allocated = torch.cuda.memory_allocated(i) / 1024**3
+                memory_reserved = torch.cuda.memory_reserved(i) / 1024**3
+                print(f"  메모리 사용량: {memory_allocated:.2f}GB / {memory_reserved:.2f}GB")
+            except:
+                print("  메모리 정보 확인 불가")
+        
+        device = "cuda"
+    else:
+        print("GPU 사용 가능: ❌ (CPU 사용)")
+        device = "cpu"
+    
+    print("=" * 50)
+    return device
 
-# 📌 인덱스 이름
-TEAM_INDEX_NAME = st.secrets["team_pinecone"]["index_name"]
-COMPANY_INDEX_NAME = st.secrets["my_pinecone"]["index_company"]
-META_INDEX_NAME = st.secrets["my_pinecone"]["index_meta"]
+# 디바이스 설정
+DEVICE = setup_device()
 
-# ------------------ Gemini 초기화 ------------------
-GEMINI_MODEL = "gemini-2.0-flash-exp"
-genai.configure(api_key=GEMINI_API_KEY)
-gemini = genai.GenerativeModel(GEMINI_MODEL)
+# ---------------------- API 키 및 설정 ----------------------
+try:
+    # 🔐 API Key
+    PINECONE_TEAM_API_KEY = st.secrets["team_pinecone"]["api_key"]
+    PINECONE_MY_API_KEY = st.secrets["my_pinecone"]["api_key"]
+    OPENAI_API_KEY = st.secrets["my_pinecone"]["openai_api_key"]
+    GEMINI_API_KEY = st.secrets["team_pinecone"]["gemini_api_key"]
+    
+    # 📌 인덱스 이름
+    TEAM_INDEX_NAME = st.secrets["team_pinecone"]["index_name"]
+    COMPANY_INDEX_NAME = st.secrets["my_pinecone"]["index_company"]
+    META_INDEX_NAME = st.secrets["my_pinecone"]["index_meta"]
+    
+    logger.info("✅ API 키 및 설정 로드 완료")
+    
+except Exception as e:
+    logger.error(f"❌ 설정 로드 실패: {e}")
+    st.error("설정 파일을 확인해주세요.")
+    st.stop()
 
-# ------------------ Pinecone 초기화 (v3 방식) ------------------
-pc_team = Pinecone(api_key=PINECONE_TEAM_API_KEY)
-pc_my = Pinecone(api_key=PINECONE_MY_API_KEY)
+# ---------------------- Gemini 초기화 ----------------------
+try:
+    GEMINI_MODEL = "gemini-2.0-flash-exp"
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini = genai.GenerativeModel(GEMINI_MODEL)
+    logger.info("✅ Gemini 초기화 완료")
+except Exception as e:
+    logger.error(f"❌ Gemini 초기화 실패: {e}")
+    st.error("Gemini 초기화에 실패했습니다.")
 
-# ------------------ 임베딩 모델 ------------------
-embedding_e5 = HuggingFaceEmbeddings(
-    model_name="intfloat/multilingual-e5-large",
-    model_kwargs={"device": "cuda" if torch.cuda.is_available() else "cpu"}
-)
+# ---------------------- Pinecone 초기화 ----------------------
+try:
+    pc_team = Pinecone(api_key=PINECONE_TEAM_API_KEY)
+    pc_my = Pinecone(api_key=PINECONE_MY_API_KEY)
+    logger.info("✅ Pinecone 클라이언트 초기화 완료")
+except Exception as e:
+    logger.error(f"❌ Pinecone 초기화 실패: {e}")
+    st.error("Pinecone 초기화에 실패했습니다.")
 
-# ------------------ 벡터스토어 정의 ------------------
-vectorstore_news = PineconeVectorStore(
-    index=pc_team.Index(TEAM_INDEX_NAME),
-    embedding=embedding_e5,
-    text_key="summary",
-    namespace="news-ns"
-)
+# ---------------------- 임베딩 모델 초기화 ----------------------
+@st.cache_resource
+def load_embedding_model():
+    """임베딩 모델 로드 (개선된 버전)"""
+    try:
+        logger.info("🔄 임베딩 모델 로드 중...")
+        
+        # GPU 캐시 정리
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        
+        # 모델 로드 옵션들 (우선순위 순)
+        model_options = [
+            {
+                "model_name": "intfloat/multilingual-e5-large",
+                "model_kwargs": {
+                    "device": DEVICE,
+                    "trust_remote_code": True,
+                    "torch_dtype": torch.float16 if DEVICE == "cuda" else torch.float32,
+                },
+                "encode_kwargs": {"normalize_embeddings": True, "batch_size": 32}
+            },
+            {
+                "model_name": "intfloat/multilingual-e5-base",  # 더 작은 모델
+                "model_kwargs": {
+                    "device": DEVICE,
+                    "trust_remote_code": True,
+                    "torch_dtype": torch.float16 if DEVICE == "cuda" else torch.float32,
+                },
+                "encode_kwargs": {"normalize_embeddings": True, "batch_size": 64}
+            },
+            {
+                "model_name": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                "model_kwargs": {
+                    "device": DEVICE,
+                    "trust_remote_code": True,
+                },
+                "encode_kwargs": {"normalize_embeddings": True, "batch_size": 128}
+            }
+        ]
+        
+        # 각 모델 옵션을 순차적으로 시도
+        for i, options in enumerate(model_options):
+            try:
+                logger.info(f"📥 모델 로드 시도 {i+1}/3: {options['model_name']}")
+                
+                embedding_model = HuggingFaceEmbeddings(**options)
+                
+                # 테스트 임베딩 생성
+                test_embedding = embedding_model.embed_query("테스트")
+                
+                if len(test_embedding) > 100:  # 임베딩 차원 확인
+                    logger.info(f"✅ 임베딩 모델 로드 성공: {options['model_name']}")
+                    logger.info(f"   임베딩 차원: {len(test_embedding)}")
+                    logger.info(f"   디바이스: {DEVICE}")
+                    return embedding_model
+                else:
+                    logger.warning(f"⚠️ 임베딩 차원이 너무 작음: {len(test_embedding)}")
+                    
+            except Exception as e:
+                logger.warning(f"⚠️ 모델 로드 실패: {options['model_name']} - {str(e)}")
+                # GPU 메모리 정리
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                continue
+        
+        # 모든 모델 로드 실패
+        logger.error("❌ 모든 임베딩 모델 로드 실패")
+        
+        # 마지막 시도: CPU로 강제 설정
+        if DEVICE == "cuda":
+            logger.info("🔄 CPU로 모델 로드 재시도...")
+            try:
+                embedding_model = HuggingFaceEmbeddings(
+                    model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                    model_kwargs={"device": "cpu", "trust_remote_code": True},
+                    encode_kwargs={"normalize_embeddings": True}
+                )
+                
+                test_embedding = embedding_model.embed_query("테스트")
+                if len(test_embedding) > 100:
+                    logger.info("✅ CPU 모드로 임베딩 모델 로드 성공")
+                    return embedding_model
+                    
+            except Exception as e:
+                logger.error(f"❌ CPU 모드 로드도 실패: {e}")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ 임베딩 모델 로드 중 예상치 못한 오류: {e}")
+        return None
 
-vectorstore_company = PineconeVectorStore(
-    index=pc_my.Index(COMPANY_INDEX_NAME),
-    embedding=embedding_e5,
-    text_key="summary_comment"
-)
+# ---------------------- 벡터스토어 초기화 안전화 ----------------------
+@st.cache_resource
+def initialize_vectorstores():
+    """벡터스토어 초기화 (안전화된 버전)"""
+    try:
+        # 임베딩 모델 재로드
+        embedding_e5 = load_embedding_model()
+        
+        if embedding_e5 is None:
+            logger.error("❌ 임베딩 모델이 로드되지 않았습니다.")
+            return None, None, None
+        
+        logger.info("🔄 벡터스토어 초기화 시작...")
+        
+        vectorstore_news = None
+        vectorstore_company = None
+        vectorstore_meta = None
+        
+        # 뉴스 벡터스토어
+        try:
+            vectorstore_news = PineconeVectorStore(
+                index=pc_team.Index(TEAM_INDEX_NAME),
+                embedding=embedding_e5,
+                text_key="summary",
+                namespace="news-ns"
+            )
+            logger.info("✅ 뉴스 벡터스토어 초기화 성공")
+        except Exception as e:
+            logger.error(f"❌ 뉴스 벡터스토어 초기화 실패: {e}")
+        
+        # 회사 벡터스토어
+        try:
+            vectorstore_company = PineconeVectorStore(
+                index=pc_my.Index(COMPANY_INDEX_NAME),
+                embedding=embedding_e5,
+                text_key="summary_comment"
+            )
+            logger.info("✅ 회사 벡터스토어 초기화 성공")
+        except Exception as e:
+            logger.error(f"❌ 회사 벡터스토어 초기화 실패: {e}")
+        
+        # 메타 벡터스토어
+        try:
+            vectorstore_meta = PineconeVectorStore(
+                index=pc_my.Index(META_INDEX_NAME),
+                embedding=embedding_e5,
+                text_key="description"
+            )
+            logger.info("✅ 메타 벡터스토어 초기화 성공")
+        except Exception as e:
+            logger.error(f"❌ 메타 벡터스토어 초기화 실패: {e}")
+        
+        # 성공한 벡터스토어 개수 확인
+        success_count = sum([
+            vectorstore_news is not None,
+            vectorstore_company is not None,
+            vectorstore_meta is not None
+        ])
+        
+        logger.info(f"✅ 벡터스토어 초기화 완료 ({success_count}/3 성공)")
+        return vectorstore_news, vectorstore_company, vectorstore_meta
+        
+    except Exception as e:
+        logger.error(f"❌ 벡터스토어 초기화 실패: {e}")
+        return None, None, None
 
-vectorstore_meta = PineconeVectorStore(
-    index=pc_my.Index(META_INDEX_NAME),
-    embedding=embedding_e5,
-    text_key="description"
-)
+# ---------------------- Retriever 안전한 초기화 ----------------------
+def initialize_retrievers():
+    """Retriever 안전한 초기화"""
+    try:
+        vectorstore_news, vectorstore_company, vectorstore_meta = initialize_vectorstores()
+        if not all([vectorstore_news, vectorstore_company, vectorstore_meta]):
+            logger.error("벡터스토어가 초기화되지 않았습니다.")
+            return None, None, None
+            
+        retriever_news = vectorstore_news.as_retriever(
+            search_kwargs={"k": 5, "score_threshold": 0.7}
+        )
+        retriever_company = vectorstore_company.as_retriever(
+            search_kwargs={"k": 5, "score_threshold": 0.7}
+        )
+        retriever_meta = vectorstore_meta.as_retriever(
+            search_kwargs={"k": 3, "score_threshold": 0.7}
+        )
+        
+        logger.info("✅ Retriever 설정 완료")
+        return retriever_news, retriever_company, retriever_meta
+        
+    except Exception as e:
+        logger.error(f"❌ Retriever 초기화 실패: {e}")
+        return None, None, None
 
-# ------------------ Retriever 정의 ------------------
-retriever_news = vectorstore_news.as_retriever(search_kwargs={"k": 5})
-retriever_company = vectorstore_company.as_retriever(search_kwargs={"k": 5})
-retriever_meta = vectorstore_meta.as_retriever(search_kwargs={"k": 3})
+# Retriever 초기화 (전역 변수로 설정)
+retriever_news, retriever_company, retriever_meta = initialize_retrievers()
 
-# ------------------ GPT LLM 정의 ------------------
-llm = ChatOpenAI(
-    model_name="gpt-4o",
-    temperature=0.3,
-    openai_api_key=OPENAI_API_KEY
-)
-# 🔍 뉴스용 QA 체인
-qa_chain_news = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=retriever_news,
-    return_source_documents=True
-)
+# ---------------------- LLM 설정 ----------------------
+MODEL_NAME = "gpt-4o"
+TEMPERATURE = 0.3
+MAX_TOKENS = 2000
 
-# 🔍 종합분석용 QA 체인
-qa_chain_meta = RetrievalQA.from_chain_type(
-    llm=llm,
-    retriever=retriever_meta,
-    return_source_documents=True
-)
+try:
+    llm = ChatOpenAI(
+        model_name=MODEL_NAME,
+        temperature=TEMPERATURE,
+        openai_api_key=OPENAI_API_KEY,
+        max_tokens=MAX_TOKENS,
+        streaming=True  # 스트리밍 활성화
+    )
+    logger.info("✅ GPT LLM 초기화 완료")
+except Exception as e:
+    logger.error(f"❌ LLM 초기화 실패: {e}")
+    st.error("LLM 초기화에 실패했습니다.")
+    llm = None
 
-# ✅ FastAPI 기업 데이터 호출
-@st.cache_data(ttl=600, show_spinner="📡 기업 데이터 로딩 중...")
-def fetch_company_data(company_name: str) -> dict:
-    response = requests.get(f"{FASTAPI_URL}/company_data", params={"company": company_name})
-    if response.status_code != 200:
-        raise ValueError("FastAPI에서 데이터를 불러오지 못했습니다.")
-    return response.json()
+# ---------------------- OpenAI 클라이언트 초기화 ----------------------
+try:
+    openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    logger.info("✅ OpenAI 클라이언트 초기화 완료")
+except Exception as e:
+    logger.error(f"❌ OpenAI 클라이언트 초기화 실패: {e}")
+    openai_client = None
 
+# ---------------------- QA 체인 안전한 초기화 ----------------------
+def initialize_qa_chains():
+    """QA 체인 안전한 초기화"""
+    qa_chain_news = None
+    qa_chain_meta = None
+    
+    try:
+        if llm is None:
+            logger.error("LLM이 초기화되지 않았습니다.")
+            return None, None
+            
+        # 뉴스용 QA 체인
+        if retriever_news is not None:
+            qa_chain_news = RetrievalQA.from_chain_type(
+                llm=llm,
+                retriever=retriever_news,
+                return_source_documents=True
+            )
+            logger.info("✅ 뉴스 QA 체인 초기화 완료")
+        else:
+            logger.warning("⚠️ 뉴스 retriever가 없어 QA 체인을 생성할 수 없습니다.")
+        
+        # 메타 분석용 QA 체인
+        if retriever_meta is not None:
+            qa_chain_meta = RetrievalQA.from_chain_type(
+                llm=llm,
+                retriever=retriever_meta,
+                return_source_documents=True
+            )
+            logger.info("✅ 메타 QA 체인 초기화 완료")
+        else:
+            logger.warning("⚠️ 메타 retriever가 없어 QA 체인을 생성할 수 없습니다.")
+            
+        return qa_chain_news, qa_chain_meta
+        
+    except Exception as e:
+        logger.error(f"❌ QA 체인 초기화 실패: {e}")
+        return None, None
 
-# ✅ GPT 메시지 생성
+# QA 체인 초기화
+qa_chain_news, qa_chain_meta = initialize_qa_chains()
+
+# ---------------------- 유틸리티 함수 ----------------------
+def clear_gpu_cache():
+    """GPU 캐시 정리"""
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        logger.info("🧹 GPU 캐시 정리 완료")
+
+def get_gpu_memory_info():
+    """GPU 메모리 사용량 정보 반환"""
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated() / 1024**3
+        reserved = torch.cuda.memory_reserved() / 1024**3
+        return f"GPU 메모리: {allocated:.2f}GB / {reserved:.2f}GB"
+    return "GPU 사용 불가"
+
+def get_system_status():
+    """시스템 상태 확인"""
+    # 임베딩 모델 및 벡터스토어는 함수 호출로 가져옴 (캐시 활용)
+    embedding_e5 = load_embedding_model()
+    vectorstore_news, vectorstore_company, vectorstore_meta = initialize_vectorstores()
+    status = {
+        "device": DEVICE,
+        "embedding_model": embedding_e5 is not None,
+        "vectorstore_news": vectorstore_news is not None,
+        "vectorstore_company": vectorstore_company is not None,
+        "vectorstore_meta": vectorstore_meta is not None,
+        "retriever_news": retriever_news is not None,
+        "retriever_company": retriever_company is not None,
+        "retriever_meta": retriever_meta is not None,
+        "llm": llm is not None,
+        "openai_client": openai_client is not None,
+        "qa_chain_news": qa_chain_news is not None,
+        "qa_chain_meta": qa_chain_meta is not None,
+    }
+    return status
+
+# ---------------------- 안전한 사용 함수들 ----------------------
+def safe_retrieve(retriever, query, fallback_text="정보를 찾을 수 없습니다."):
+    """안전한 retriever 사용"""
+    try:
+        if retriever is None:
+            logger.warning(f"Retriever가 None입니다. 쿼리: {query}")
+            return [{"page_content": fallback_text, "metadata": {}}]
+        
+        results = retriever.invoke(query)
+        if not results:
+            logger.info(f"검색 결과가 없습니다. 쿼리: {query}")
+            return [{"page_content": fallback_text, "metadata": {}}]
+        
+        return results
+    except Exception as e:
+        logger.error(f"검색 중 오류 발생: {e}")
+        return [{"page_content": fallback_text, "metadata": {}}]
+
+def safe_qa_query(qa_chain, query, fallback_text="답변을 생성할 수 없습니다."):
+    """안전한 QA 체인 사용"""
+    try:
+        if qa_chain is None:
+            logger.warning(f"QA 체인이 None입니다. 쿼리: {query}")
+            return {"result": fallback_text, "source_documents": []}
+        
+        result = qa_chain.invoke({"query": query})
+        return result
+    except Exception as e:
+        logger.error(f"QA 체인 실행 중 오류 발생: {e}")
+        return {"result": fallback_text, "source_documents": []}
+
+# ✅ 재무 데이터 전처리 (공통 함수)
+@st.cache_data(ttl=300)
+def process_financial_data(financial_data: list) -> pd.DataFrame:
+    """재무 데이터 처리 최적화"""
+    if not financial_data:
+        return pd.DataFrame()
+    
+    # 스키마 검증
+    required_columns = ['amount', 'fiscal_date', 'account_name']
+    
+    try:
+        df = pd.DataFrame(financial_data)
+        missing_cols = [col for col in required_columns if col not in df.columns]
+        if missing_cols:
+            logger.warning(f"누락된 컬럼: {missing_cols}")
+            return pd.DataFrame()
+        
+        # 데이터 타입 최적화
+        df = df.copy()
+        df["amount"] = pd.to_numeric(df["amount"], errors='coerce')
+        df["fiscal_date"] = pd.to_datetime(df["fiscal_date"], errors='coerce')
+        
+        # 유효한 데이터만 필터링
+        df = df.dropna(subset=['amount', 'fiscal_date'])
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"재무 데이터 처리 오류: {e}")
+        return pd.DataFrame()
+
+# ✅ 재무 데이터 포맷팅 (공통 함수)
+def format_financial_summary(df: pd.DataFrame) -> str:
+    """재무 데이터를 요약 텍스트로 포맷팅"""
+    if df.empty:
+        return "재무 데이터 없음"
+    
+    grouped = df.groupby("fiscal_date")
+    lines = []
+    for date, group in grouped:
+        line = f"{date} 기준\n"
+        for _, row in group.iterrows():
+            formatted_value = format_korean_number_for_dashboard(
+                row["account_name"], row["amount"]
+            )
+            line += f"- {row['account_name']}: {formatted_value}\n"
+        lines.append(line)
+    
+    return "\n".join(lines)
+
+# ✅ GPT 메시지 생성 (개선됨)
 def generate_gpt4o_response_from_history_stream(system_prompt: str = None):
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)  # 이미 전역에서 로드된 값 사용
-
+    """세션 메시지 히스토리를 기반으로 GPT 응답 생성"""
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
+    
     for msg in st.session_state.message:
         messages.append({"role": msg["role"], "content": msg["text"]})
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
+    response = openai_client.chat.completions.create(
+        model=MODEL_NAME,
         messages=messages,
-        temperature=0.3,
+        temperature=TEMPERATURE,
         stream=True,
     )
 
@@ -1605,14 +1980,14 @@ def generate_gpt4o_response_from_history_stream(system_prompt: str = None):
         yield answer + "▌"
     yield answer
 
-# 질문 판별
+# 질문 판별 (개선됨)
 def classify_question(text: str) -> str:
+    """질문을 카테고리별로 분류"""
     text = text.lower()
 
     category_patterns = {
         "news": r"(뉴스|보도|이슈|최근.*소식|기사|언론|근황)",
         "meta": r"(매출|이익|자산|부채|재무비율|현금흐름|ROE|PER|PBR|FCF|EPS|재무|실적|변화)",
-        #"company": r"(설립일|상장일|투자유형|업종|기업명|직원|기업소개|개요|소개|무슨\s?회사|어떤\s?기업|정체|대표이사)",
         "macro": r"(금리|환율|물가|GDP|경기|종합|분석|평가)"
     }
 
@@ -1623,9 +1998,7 @@ def classify_question(text: str) -> str:
 
 # 질문 카테고리에 따라 알맞은 RAG QA 체인을 반환하는 함수
 def get_retrieval_chain_by_question(text: str):
-    """
-    질문을 분류하여 해당 카테고리와 QA 체인을 함께 반환
-    """
+    """질문을 분류하여 해당 카테고리와 QA 체인을 함께 반환"""
     category = classify_question(text)
     chain = {
         "news": qa_chain_news,
@@ -1634,35 +2007,37 @@ def get_retrieval_chain_by_question(text: str):
 
     return category, chain
 
-# 뉴스 관련 답변
+# ✅ 뉴스 소스 링크 포맷팅 (분리된 함수)
+def format_news_sources(news_items: list, max_items: int = 5) -> str:
+    """뉴스 아이템들을 출처 링크 형태로 포맷팅"""
+    source_links = []
+    for i, n in enumerate(news_items[:max_items], 1):
+        if n.get('link') and n.get('date') and n.get('news_name'):
+            title = n.get('news_name')
+            if len(title) > 60:
+                title = title[:57] + "..."
+            
+            date_str = n.get('date', '').replace('(', '').replace(')', '')
+            source_links.append(f"• [{title}]({n.get('link')}) ({date_str})")
+    
+    return "\n\n".join(source_links) if source_links else "• 참고할 수 있는 뉴스 링크가 없습니다."
+
+# 뉴스 관련 답변 (개선됨)
 def ask_from_news_summary(question: str, news_items: list) -> Generator[str, None, None]:
-    """
-    최근 뉴스 요약 데이터를 기반으로 사용자의 질문에 답변을 생성합니다.
-    벡터 검색(RAG)을 사용하지 않고, 사전 요약된 뉴스 제목과 분류 정보만 활용합니다.
-    ✅ 목적:
-    - 초보 투자자도 이해할 수 있도록, 최근 뉴스의 핵심 내용을 해석해주는 역할
-    - 뉴스 키워드 중심의 친절한 설명 제공 + 사실 기반 구조화된 요약
-    """
+    """최근 뉴스 요약 데이터를 기반으로 사용자의 질문에 답변을 생성합니다."""
+    
     # 🔹 한글 번역 맵
     aspect_map = {
-        "financial": "재무",
-        "esg": "ESG",
-        "investment_ma": "투자·인수합병",
-        "risk_issue": "리스크",
-        "strategy": "전략",
-        "product_service": "제품·서비스",
-        "general": "일반",
-        "partnership": "협력",
-        "economy": "경제"
+        "financial": "재무", "esg": "ESG", "investment_ma": "투자·인수합병",
+        "risk_issue": "리스크", "strategy": "전략", "product_service": "제품·서비스",
+        "general": "일반", "partnership": "협력", "economy": "경제"
     }
     
     sentiment_map = {
-        "positive": "긍정",
-        "neutral": "중립",
-        "negative": "부정"
+        "positive": "긍정", "neutral": "중립", "negative": "부정"
     }
     
-    # 🔹 뉴스 요약 생성 (본문용 - 링크 없음)
+    # 🔹 뉴스 요약 생성
     summary = "\n".join([
         f"- {n.get('news_name')} ({aspect_map.get(n.get('news_aspect'), '기타')} / {sentiment_map.get(n.get('overall_sentiment'), '감정 없음')})"
         for n in news_items[:5]
@@ -1671,34 +2046,12 @@ def ask_from_news_summary(question: str, news_items: list) -> Generator[str, Non
     if not summary.strip():
         summary = "❌ 관련 뉴스가 존재하지 않습니다."
     
-    # 🔹 출처 링크 생성 (하이퍼링크 포함)
-    source_links = []
-    for i, n in enumerate(news_items[:5], 1):
-        if n.get('link') and n.get('date') and n.get('news_name'):
-            # 기사 제목이 너무 길면 줄임
-            title = n.get('news_name')
-            if len(title) > 60:
-                title = title[:57] + "..."
-            
-            # 날짜 포맷팅 (YYYY-MM-DD 형식으로 통일)
-            date_str = n.get('date')
-            if date_str:
-                # 날짜 형식 정리
-                date_str = date_str.replace('(', '').replace(')', '')
-            
-            source_links.append(f"• [{title}]({n.get('link')}) ({date_str})")
-    
-    # 출처가 없는 경우 처리
-    if not source_links:
-        source_links = ["• 참고할 수 있는 뉴스 링크가 없습니다."]
-    
-    # 각 출처를 개별 줄로 표시하기 위해 줄바꿈 추가
-    sources_text = "\n\n".join(source_links)
+    # 🔹 출처 링크 생성
+    sources_text = format_news_sources(news_items)
     
     # 🔹 프롬프트 구성
     system_prompt = f"""
 당신은 초보 투자자에게 뉴스를 쉽게 해석해주는 **금융 뉴스 해설 전문가**입니다.
-다음은 사용자의 질문과, 최근 기업 관련 뉴스 요약입니다.
 
 ## 🧠 분석 원칙:
 1. **기사에 명시된 내용만 사용**합니다. 추정하거나 유추하지 마세요.
@@ -1727,152 +2080,113 @@ def ask_from_news_summary(question: str, news_items: list) -> Generator[str, Non
     
     return generate_gpt4o_response_from_history_stream(system_prompt)
 
-# ✅ 재무 기반 GPT 답변 (스트림 방식)
-def generate_financial_based_answer_stream(question: str, financial_data: dict):
-    """
-    사용자의 질문에 대해 재무제표 데이터를 바탕으로 GPT가 쉽게 해석한 설명을 생성합니다.
-    - 수치는 정제된 한국식 단위로 출력되며
-    - 초보자에게 친절한 회계 해설 스타일로 구성됩니다.
-    """
-    # 🔹 데이터프레임 정제
-    df = pd.DataFrame(financial_data)
-    df = df[df["amount"].notna()]
-    df["amount"] = df["amount"].astype(float)
-    df["fiscal_date"] = df["fiscal_date"].astype(str)
-
-    # 🔹 연도별 그룹화하여 설명 포맷 구성
-    grouped = df.groupby("fiscal_date")
-    lines = []
-    for date, group in grouped:
-        line = f"{date} 기준\n"
-        for _, row in group.iterrows():
-            formatted_value = format_korean_number_for_dashboard(
-                row["account_name"], row["amount"]
-            )
-            line += f"- {row['account_name']}: {formatted_value}\n"
-        lines.append(line)
-
-    formatted = "\n".join(lines)
+# ✅ 재무 기반 GPT 답변 (개선됨)
+def generate_financial_based_answer_stream(question: str, financial_data: list):
+    """재무제표 데이터를 바탕으로 GPT가 쉽게 해석한 설명을 생성합니다."""
+    
+    # 🔹 데이터 전처리 (캐시된 함수 사용)
+    df = process_financial_data(financial_data)
+    formatted = format_financial_summary(df)
 
     # 🔹 GPT system 프롬프트
     system_prompt = f"""
-    당신은 재무제표를 쉽게 설명해 주는 **기업 분석가**입니다.  
-    아래는 특정 기업의 연도별 재무 항목 요약입니다.
+당신은 재무제표를 쉽게 설명해 주는 **기업 분석가**입니다.
 
-    사용자의 질문에 대해 아래 지침에 따라 응답해 주세요:
+사용자의 질문에 대해 아래 지침에 따라 응답해 주세요:
 
-    - **회계 비전문가도 이해할 수 있게** 용어를 풀어 설명해 주세요.  
-      예: "자산이 늘었다 → 기업이 가진 재산이 많아졌다"
-    - **수치보다는 변화 방향과 흐름**에 중점을 둬서 설명해 주세요.
-    - **무엇이 어떻게 변했고**, **그게 왜 중요한지** 중심으로 분석해 주세요.
-    - 가능하면 **간단한 비유나 사례**를 통해 설명을 돕습니다.
-    - 감정적 평가나 추천 없이, **중립적이고 명확한** 설명만 해주세요.
+- **회계 비전문가도 이해할 수 있게** 용어를 풀어 설명해 주세요.
+- **수치보다는 변화 방향과 흐름**에 중점을 둬서 설명해 주세요.
+- **무엇이 어떻게 변했고**, **그게 왜 중요한지** 중심으로 분석해 주세요.
+- 가능하면 **간단한 비유나 사례**를 통해 설명을 돕습니다.
+- 감정적 평가나 추천 없이, **중립적이고 명확한** 설명만 해주세요.
 
-    ## [사용자 질문]
-    {question}
+## [사용자 질문]
+{question}
 
-    ## [재무제표 요약]
-    {formatted}
-    """
+## [재무제표 요약]
+{formatted}
+"""
     return generate_gpt4o_response_from_history_stream(system_prompt)
 
-# ✅ 종합 분석 + RAG 결합 GPT 답변 (스트림)
+# ✅ 공통 포맷팅 함수들
+def format_ratios(ratios: list) -> str:
+    """재무비율 포맷팅"""
+    if not ratios:
+        return "재무비율 정보 없음"
+    return "\n".join([f"- {r['year']}년 {r['metric']}: {r['value']}" for r in ratios])
+
+def format_news_simple(news_items: list) -> str:
+    """뉴스 간단 포맷팅"""
+    if not news_items:
+        return "관련 뉴스 없음"
+    return "\n".join([
+        f"- [{n.get('news_name', '기사 없음')}]({n.get('link', '')})"
+        for n in news_items
+    ])
+
+def format_macro(macro: list) -> str:
+    """거시경제 지표 포맷팅"""
+    if not macro:
+        return "거시경제 정보 없음"
+    df = pd.DataFrame(macro)
+    df = df.sort_values(by="date", ascending=False)
+    latest = df.groupby("indicator").first().reset_index()
+    return "\n".join([
+        f"- {row['indicator']}: {row['value']} (기준일: {row['date']})"
+        for _, row in latest.iterrows()
+    ])
+
+# ✅ 종합 분석 + RAG 결합 GPT 답변 (개선됨)
 def answer_with_context_and_rag_stream(question: str, data: dict, qa_chain, news_items: list = []):
-    """
-    LLM이 다양한 기업 데이터를 바탕으로 종합 분석과 RAG 문서를 결합해 해석적 설명을 생성합니다.
-    - 초보자도 이해할 수 있도록 해석 중심
-    - 투자자에게 의미 있는 인사이트 제공
-    """
+    """LLM이 다양한 기업 데이터를 바탕으로 종합 분석과 RAG 문서를 결합해 해석적 설명을 생성합니다."""
 
     # 🔹 데이터 추출
     ratios = data.get("financial_ratios", [])
     fin_data = data.get("financial_raw", [])
     macro = data.get("econ_idx", [])
 
-    # 🔹 적절한 RAG 체인 선택 및 문서 요약
+    # 🔹 RAG 문서 요약
     rag_docs = qa_chain.invoke({"query": question}).get("source_documents", [])
     rag_summary = "\n".join([doc.page_content for doc in rag_docs[:3]]) or "관련 문서 없음"
 
-    # 🔹 재무비율 요약
-    def format_ratios(ratios):
-        if not ratios:
-            return "재무비율 정보 없음"
-        return "\n".join([f"- {r['year']}년 {r['metric']}: {r['value']}" for r in ratios])
-
-    # 🔹 뉴스 요약
-    def format_news(news_items):
-        if not news_items:
-            return "관련 뉴스 없음"
-        return "\n".join([
-            f"- [{n.get('news_name', '기사 없음')}]({n.get('link', '')})"
-            for n in news_items
-        ])
-
-    # 🔹 재무제표 요약
-    def format_financials(data):
-        df = pd.DataFrame(data)
-        df = df[df["amount"].notna()]
-        df["amount"] = df["amount"].astype(float)
-        df["fiscal_date"] = df["fiscal_date"].astype(str)
-
-        grouped = df.groupby("fiscal_date")
-        return "\n".join(
-            f"{date} 기준\n" +
-            "\n".join([
-                f"- {row['account_name']}: {format_korean_number_for_dashboard(row['account_name'], row['amount'])}"
-                for _, row in group.iterrows()
-            ])
-            for date, group in grouped
-        )
-
-    # 🔹 거시경제 요약 함수
-    def format_macro(macro):
-        if not macro:
-            return "거시경제 정보 없음"
-        df = pd.DataFrame(macro)
-        df = df.sort_values(by="date", ascending=False)
-        latest = df.groupby("indicator").first().reset_index()
-        return "\n".join([
-            f"- {row['indicator']}: {row['value']} (기준일: {row['date']})"
-            for _, row in latest.iterrows()
-        ])
+    # 🔹 재무제표 처리 (캐시된 함수 사용)
+    df = process_financial_data(fin_data)
+    formatted_financials = format_financial_summary(df)
     
     # 🔹 프롬프트 구성
     system_prompt = f"""
-    당신은 **투자 리서치 전문가**입니다.  
-    아래는 특정 기업에 대한 다양한 데이터와 문서 요약입니다.
+당신은 **투자 리서치 전문가**입니다.
 
-    사용자의 질문에 대해 다음 기준으로 설명해 주세요:
+사용자의 질문에 대해 다음 기준으로 설명해 주세요:
 
-    - 기업의 **사업 모델, 성장 전략** 등 개요를 간단히 설명
-    - **재무제표와 재무비율**을 통해 수익성·안정성·성장성 분석
-    - **뉴스와 관련 문서(RAG)**로 최근 이슈와 방향성 해석
-    - **거시경제 흐름(금리, 환율 등)**이 기업에 미치는 영향 해석
-    - 마지막에는 **투자자에게 중요한 시사점**을 요약해 주세요 (2~3줄)
+- 기업의 **사업 모델, 성장 전략** 등 개요를 간단히 설명
+- **재무제표와 재무비율**을 통해 수익성·안정성·성장성 분석
+- **뉴스와 관련 문서(RAG)**로 최근 이슈와 방향성 해석
+- **거시경제 흐름(금리, 환율 등)**이 기업에 미치는 영향 해석
+- 마지막에는 **투자자에게 중요한 시사점**을 요약해 주세요 (2~3줄)
 
-    📌 분석은 간결하고 논리적으로, 수치 중심이 아닌 **해석과 설명 중심**으로 구성하세요.
+📌 분석은 간결하고 논리적으로, 수치 중심이 아닌 **해석과 설명 중심**으로 구성하세요.
 
-    질문: {question}
+질문: {question}
 
-    [재무비율]
-    {format_ratios(ratios)}
+[재무비율]
+{format_ratios(ratios)}
 
-    [재무제표]
-    {format_financials(fin_data)}
-    
-    [거시경제 지표]
-    {format_macro(macro)}
-    
-    [최근 뉴스]
-    {format_news(news_items)}
+[재무제표]
+{formatted_financials}
 
-    [RAG 기반 관련 문서]
-    {rag_summary}
+[거시경제 지표]
+{format_macro(macro)}
 
-    📝 [투자자 시사점 요약]
-    - 핵심 재무 흐름과 최근 이슈를 바탕으로 투자자에게 도움이 될 **간결한 인사이트**를 제공하세요.
-    - 예: “2024년 이후 매출 증가세와 부채 감소는 긍정적이며, AI 반도체 관련 뉴스는 중장기 성장 가능성을 뒷받침합니다.”
-    """
+[최근 뉴스]
+{format_news_simple(news_items)}
+
+[RAG 기반 관련 문서]
+{rag_summary}
+
+📝 [투자자 시사점 요약]
+- 핵심 재무 흐름과 최근 이슈를 바탕으로 투자자에게 도움이 될 **간결한 인사이트**를 제공하세요.
+"""
     return generate_gpt4o_response_from_history_stream(system_prompt)
 
 # ------------------ Streamlit UI ------------------
@@ -1899,25 +2213,47 @@ with st.container():
         st.error(f"데이터 호출 실패: {e}")
         st.stop()
 
-    # 🔁 UI에 최근 user + assistant 한 쌍만 보여줌
-    last_messages = st.session_state.message[-2:]
+    # 🔁 최근 메시지만 출력 (일관성 유지)
+    messages_to_show = st.session_state.get("message", [])[-3:]  # 최근 3개만
+    
+# 💬 사용자 입력 (최상단에 위치)
+question = st.chat_input("기업 및 시장 관련 질문을 입력해보세요.")
 
-    for msg in last_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["text"])
+# 채팅 영역 스타일 개선
+st.markdown("""
+<style>
+    .stChatMessage {
+        margin-bottom: 1rem;
+    }
+    .main .block-container {
+        padding-bottom: 2rem;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-    # 💬 사용자 입력
-    question = st.chat_input("기업 및 시장 관련 질문을 입력해보세요.")
-    if question:
-        st.session_state.message.append({"role": "user", "text": question})
-        with st.chat_message("user"):
-            st.markdown(question)
+# 메시지 표시
+if 'message' not in st.session_state:
+    st.session_state.message = []
 
-        info_container = st.empty()
-        with info_container.container():
-            with st.chat_message("assistant"):
-                st.info("AI가 답변 생성 중입니다...")
+# 보여줄 메시지 수 제한 (메모리 절약)
+messages_to_show = st.session_state.message[-20:] if len(st.session_state.message) > 20 else st.session_state.message
 
+for msg in messages_to_show:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["text"])
+
+# 사용자 입력 처리
+if question:
+    # 사용자 메시지 추가 및 표시
+    st.session_state.message.append({"role": "user", "text": question})
+    with st.chat_message("user"):
+        st.markdown(question)
+
+    # AI 응답 생성
+    with st.chat_message("assistant"):
+        placeholder = st.empty()
+        placeholder.info("AI가 답변 생성 중입니다...")
+        
         category, qa_chain = get_retrieval_chain_by_question(question)
 
         if category == "news":
@@ -1933,19 +2269,15 @@ with st.container():
                 question, data, qa_chain, data.get("news", [])
             )
 
-        info_container.empty()
+        # 스트리밍 출력
+        last_answer = ""
+        for partial in stream_gen:
+            placeholder.markdown(partial + "▌")
+            last_answer = partial
+        placeholder.markdown(last_answer)
+        answer = last_answer
 
-        # ✅ 스트리밍 출력
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
-            last_answer = ""
-            for partial in stream_gen:
-                placeholder.markdown(partial + "▌")
-                last_answer = partial
-            placeholder.markdown(last_answer)
-            answer = last_answer
-
-        st.session_state.message.append({"role": "assistant", "text": answer})
+    st.session_state.message.append({"role": "assistant", "text": answer})
 
 # ✅ 세션 메시지 정리 (최근 3개만 유지)
 MAX_MESSAGES = 3
