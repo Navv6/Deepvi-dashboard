@@ -98,17 +98,6 @@ st.set_page_config(
 )
 
 
-def scroll_to_top():
-    # JS로 강제 스크롤 이동
-    html("""
-    <script>
-        window.scrollTo({top: 0, left: 0, behavior: 'instant'});
-    </script>
-    """, height=0)
-
-# 분석 페이지 진입(로딩) 직후 실행
-scroll_to_top()
-
 # FastAPI 서버 URL
 FASTAPI_URL = "http://218.50.44.25:8000"
 
@@ -243,7 +232,7 @@ st.markdown(f"""
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex: 1 1 calc(70%  rem);  /* 두 칸으로 유지 */
+    flex: 1 1 calc(25% - 1rem);
     min-width: 140px;
     max-width: 220px;
     box-sizing: border-box;
