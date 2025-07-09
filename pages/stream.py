@@ -1989,7 +1989,7 @@ def classify_question(text: str) -> str:
     category_patterns = {
         "news": r"(뉴스|보도|이슈|최근.*소식|기사|언론|근황)",
         "meta": r"(매출|이익|자산|부채|재무비율|현금흐름|ROE|PER|PBR|FCF|EPS|재무|실적|변화)",
-        "macro": r"(금리|환율|물가|GDP|경기|종합|분석|평가)"
+        "macro": r"(금리|환율|물가|GDP|경기|종합|분석|평가|전망)"
     }
 
     for category in ["meta", "news", "macro"]:  # 우선순위 순서
